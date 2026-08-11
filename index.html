@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Client-side text summarizer powered by Hugging Face Transformers.js"
+    />
+    <title>Text Summarizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="header-content">
+          <div class="logo">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <rect width="32" height="32" rx="8" fill="url(#grad)" />
+              <path
+                d="M8 12h16M8 16h12M8 20h14"
+                stroke="white"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+              <defs>
+                <linearGradient id="grad" x1="0" y1="0" x2="32" y2="32">
+                  <stop stop-color="#6366f1" />
+                  <stop offset="1" stop-color="#8b5cf6" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <h1>Text Summarizer</h1>
+          </div>
+          <p class="subtitle">
+            Summarize text entirely in your browser using
+            <a href="https://huggingface.co/Xenova/distilbart-cnn-6-6" target="_blank" rel="noopener"
+              >DistilBART-CNN</a
+            >
+          </p>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="panel model-panel">
+          <div class="panel-header">
+            <h2>Model</h2>
+            <span id="model-status" class="status-badge status-idle">Not loaded</span>
+          </div>
+
+          <div id="progress-container" class="progress-container hidden">
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+            <p id="progress-text" class="progress-text">Preparing…</p>
+          </div>
+
+          <button id="load-model-btn" class="btn btn-secondary" type="button">
+            Load Model
+          </button>
+          <p class="hint">
+            Model runs in a background worker. Your text never leaves this device.
+          </p>
+        </section>
+
+        <section class="panel input-panel">
+          <div class="panel-header">
+            <h2>Input Text</h2>
+            <span id="char-count" class="char-count">0 characters</span>
+          </div>
+
+          <textarea
+            id="input-text"
+            class="textarea"
+            placeholder="Paste or type the text you want to summarize…"
+            rows="10"
+            spellcheck="true"
+          ></textarea>
+
+          <div class="options">
+            <label class="option">
+              <span>Max length</span>
+              <input id="max-length" type="number" min="20" max="300" value="130" />
+            </label>
+            <label class="option">
+              <span>Min length</span>
+              <input id="min-length" type="number" min="10" max="100" value="30" />
+            </label>
+          </div>
+
+          <button id="summarize-btn" class="btn btn-primary" type="button" disabled>
+            Summarize
+          </button>
+        </section>
+
+        <section class="panel output-panel">
+          <div class="panel-header">
+            <h2>Summary</h2>
+            <button id="copy-btn" class="btn-icon hidden" type="button" title="Copy summary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
+          </div>
+
+          <div id="output-area" class="output-area">
+            <p class="placeholder">Your summary will appear here after you load the model and click Summarize.</p>
+          </div>
+
+          <div id="generation-status" class="generation-status hidden">
+            <div class="spinner"></div>
+            <span>Generating summary…</span>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>
+          Powered by
+          <a href="https://github.com/huggingface/transformers.js" target="_blank" rel="noopener"
+            >Transformers.js</a
+          >
+          · Runs 100% client-side with Web Workers
+        </p>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
