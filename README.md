@@ -8,7 +8,7 @@ Built with [Transformers.js](https://github.com/huggingface/transformers.js) and
 
 - **100% client-side** — runs entirely in the browser
 - **Web Workers** — model loading and text generation run in separate background workers so the UI stays responsive
-- **GitHub Pages ready** — static build with automated deployment workflow
+- **GitHub Pages & Firebase ready** — static build with automated deployment to both platforms
 - **Private by design** — no data is sent to any server
 
 ## Architecture
@@ -50,10 +50,39 @@ npm run preview
 
 Your app will be live at `https://<username>.github.io/Summarizer/`.
 
-If your repo name differs, update the `base` path in `vite.config.js`:
+The build uses relative asset paths (`base: './'`) so the same output works on both GitHub Pages and Firebase.
 
-```js
-base: process.env.GITHUB_PAGES === 'true' ? '/Your-Repo-Name/' : '/',
+## Deploy to Firebase Hosting
+
+The same workflow also deploys to Firebase Hosting on every push to `main`.
+
+### One-time setup
+
+1. Create a project in the [Firebase Console](https://console.firebase.google.com/)
+2. Enable **Firebase Hosting** for the project
+3. Set your Firebase project ID via the `FIREBASE_PROJECT_ID` GitHub secret
+4. Create a Firebase service account:
+   - **Project settings → Service accounts → Generate new private key**
+5. Add these GitHub repository secrets (**Settings → Secrets and variables → Actions**):
+
+| Secret | Description |
+|--------|-------------|
+| `FIREBASE_PROJECT_ID` | Your Firebase project ID (e.g. `my-summarizer-app`) |
+| `FIREBASE_SERVICE_ACCOUNT` | Full JSON contents of the service account key file |
+
+### How it works
+
+- **`build`** — runs `npm ci` and `npm run build` once, uploads `dist` as an artifact
+- **`github-pages`** and **`firebase`** — download the same artifact and deploy in parallel
+
+Your Firebase app will be live at `https://<project-id>.web.app`.
+
+### Manual deploy (optional)
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase deploy --only hosting
 ```
 
 ## Usage
