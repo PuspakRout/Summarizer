@@ -2,6 +2,14 @@
 node_modules/
 dist/
 
+# Model weights (run npm run download-model to fetch into public/models/)
+public/models/onnx-community/
+model-tree.json
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+
 # Environment
 .env
 .env.*

@@ -8,4 +8,8 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
+  assetsInclude: ['**/*.onnx', '**/*.onnx_data'],
+  optimizeDeps: {
+    exclude: ['@huggingface/transformers'],
+  },
 });

@@ -1,60 +1,44 @@
+import { doclingToMarkdown, normalizeDoclingOutput } from './lib/docling-markdown.js';
+import { fileToPageBitmaps, getPdfPageLimitMessage } from './lib/pdf-pages.js';
+
 const modelStatus = document.getElementById('model-status');
 const progressContainer = document.getElementById('progress-container');
 const progressFill = document.getElementById('progress-fill');
 const progressText = document.getElementById('progress-text');
 const loadModelBtn = document.getElementById('load-model-btn');
-const inputText = document.getElementById('input-text');
-const charCount = document.getElementById('char-count');
-const maxLengthInput = document.getElementById('max-length');
-const minLengthInput = document.getElementById('min-length');
-const summarizeBtn = document.getElementById('summarize-btn');
+const fileInput = document.getElementById('file-input');
+const dropZone = document.getElementById('drop-zone');
+const browseBtn = document.getElementById('browse-btn');
+const fileInfo = document.getElementById('file-info');
+const filePreview = document.getElementById('file-preview');
+const fileNameEl = document.getElementById('file-name');
+const clearFileBtn = document.getElementById('clear-file-btn');
+const parseBtn = document.getElementById('parse-btn');
 const outputArea = document.getElementById('output-area');
-const generationStatus = document.getElementById('generation-status');
+const outputActions = document.getElementById('output-actions');
+const processingStatus = document.getElementById('processing-status');
 const copyBtn = document.getElementById('copy-btn');
+const downloadBtn = document.getElementById('download-btn');
 
 let modelLoaded = false;
-let isGenerating = false;
+let isProcessing = false;
+let selectedFile = null;
+let markdownResult = '';
+let downloadBaseName = 'document';
 
 const loaderWorker = new Worker(
   new URL('./workers/model-loader.worker.js', import.meta.url),
-  { type: 'module' }
+  { type: 'module' },
 );
 
-const summarizerWorker = new Worker(
-  new URL('./workers/summarizer.worker.js', import.meta.url),
-  { type: 'module' }
+const parserWorker = new Worker(
+  new URL('./workers/parser.worker.js', import.meta.url),
+  { type: 'module' },
 );
 
 function setModelStatus(status, label) {
   modelStatus.className = `status-badge status-${status}`;
   modelStatus.textContent = label;
-}
-
-function formatProgress(progress) {
-  if (progress.status === 'progress' && progress.total) {
-    const pct = Math.round((progress.loaded / progress.total) * 100);
-    return { pct, text: `Downloading ${progress.file ?? 'model files'}… ${pct}%` };
-  }
-
-  if (progress.status === 'done') {
-    return { pct: 100, text: 'Finalizing…' };
-  }
-
-  if (progress.status === 'initiate') {
-    return { pct: 0, text: `Starting download: ${progress.file ?? 'model'}` };
-  }
-
-  return { pct: null, text: progress.status ?? 'Loading…' };
-}
-
-function showError(message) {
-  outputArea.innerHTML = `<p class="error-text">${escapeHtml(message)}</p>`;
-  copyBtn.classList.add('hidden');
-}
-
-function showSummary(text) {
-  outputArea.innerHTML = `<p class="summary-text">${escapeHtml(text)}</p>`;
-  copyBtn.classList.remove('hidden');
 }
 
 function escapeHtml(text) {
@@ -63,13 +47,149 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function updateCharCount() {
-  const length = inputText.value.length;
-  charCount.textContent = `${length.toLocaleString()} character${length === 1 ? '' : 's'}`;
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function updateSummarizeButton() {
-  summarizeBtn.disabled = !modelLoaded || isGenerating || !inputText.value.trim();
+function formatProgress(progress) {
+  if (progress.status === 'progress' && progress.total) {
+    const pct = Math.round((progress.loaded / progress.total) * 100);
+    return { pct, text: `Loading ${progress.file ?? 'model files'}… ${pct}%` };
+  }
+
+  if (progress.status === 'done') {
+    return { pct: 100, text: 'Finalizing…' };
+  }
+
+  if (progress.status === 'initiate') {
+    return { pct: 0, text: `Preparing: ${progress.file ?? 'model'}` };
+  }
+
+  return { pct: null, text: progress.status ?? 'Loading local model…' };
+}
+
+function showError(message) {
+  outputArea.innerHTML = `<p class="error-text">${escapeHtml(message)}</p>`;
+  outputActions.classList.add('hidden');
+}
+
+function showMarkdown(text) {
+  outputArea.innerHTML = `<pre class="markdown-output">${escapeHtml(text)}</pre>`;
+  outputActions.classList.remove('hidden');
+}
+
+function updateParseButton() {
+  parseBtn.disabled = !modelLoaded || isProcessing || !selectedFile;
+}
+
+function setSelectedFile(file) {
+  selectedFile = file;
+  markdownResult = '';
+
+  if (!file) {
+    fileInfo.textContent = 'No file selected';
+    filePreview.classList.add('hidden');
+    dropZone.classList.remove('hidden');
+    outputActions.classList.add('hidden');
+    outputArea.innerHTML =
+      '<p class="placeholder">Parsed markdown will appear here after you load the model, upload a document, and click Parse.</p>';
+    updateParseButton();
+    return;
+  }
+
+  const pageLimitMessage = getPdfPageLimitMessage(file);
+  fileInfo.textContent = pageLimitMessage
+    ? `${formatFileSize(file.size)} · ${pageLimitMessage}`
+    : formatFileSize(file.size);
+  fileNameEl.textContent = file.name;
+  filePreview.classList.remove('hidden');
+  dropZone.classList.add('hidden');
+  downloadBaseName = file.name.replace(/\.[^.]+$/, '') || 'document';
+  updateParseButton();
+}
+
+function parsePageWithWorker(bitmap, pageNumber) {
+  return new Promise((resolve, reject) => {
+    const handleMessage = (event) => {
+      const { type, doctags, error } = event.data;
+      if (event.data.pageNumber !== pageNumber) {
+        return;
+      }
+
+      if (type === 'PARSE_COMPLETE') {
+        parserWorker.removeEventListener('message', handleMessage);
+        resolve(doctags);
+      }
+
+      if (type === 'ERROR') {
+        parserWorker.removeEventListener('message', handleMessage);
+        reject(new Error(error ?? 'Failed to parse page'));
+      }
+    };
+
+    parserWorker.addEventListener('message', handleMessage);
+    parserWorker.postMessage({ type: 'PARSE', bitmap, pageNumber }, [bitmap]);
+  });
+}
+
+async function parseDocument() {
+  if (!selectedFile || !modelLoaded || isProcessing) {
+    return;
+  }
+
+  isProcessing = true;
+  processingStatus.classList.remove('hidden');
+  outputActions.classList.add('hidden');
+  outputArea.innerHTML = '';
+  updateParseButton();
+
+  try {
+    const pages = await fileToPageBitmaps(selectedFile);
+    const markdownPages = [];
+
+    for (const { pageNumber, bitmap } of pages) {
+      processingStatus.querySelector('span').textContent =
+        pages.length > 1
+          ? `Running OCR on page ${pageNumber} of ${pages.length}…`
+          : 'Running OCR… this may take a minute.';
+
+      const doctags = await parsePageWithWorker(bitmap, pageNumber);
+      const markdown = doclingToMarkdown(normalizeDoclingOutput(doctags));
+
+      if (pages.length > 1) {
+        markdownPages.push(`## Page ${pageNumber}\n\n${markdown}`.trim());
+      } else {
+        markdownPages.push(markdown);
+      }
+    }
+
+    markdownResult = markdownPages.filter(Boolean).join('\n\n---\n\n');
+    if (!markdownResult.trim()) {
+      throw new Error('No text could be extracted from the document');
+    }
+
+    showMarkdown(markdownResult);
+  } catch (error) {
+    showError(error.message ?? 'Failed to parse document');
+  } finally {
+    isProcessing = false;
+    processingStatus.classList.add('hidden');
+    updateParseButton();
+  }
+}
+
+function downloadMarkdown() {
+  if (!markdownResult) return;
+
+  const blob = new Blob([markdownResult], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${downloadBaseName}.md`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 loaderWorker.addEventListener('message', (event) => {
@@ -92,7 +212,7 @@ loaderWorker.addEventListener('message', (event) => {
       setModelStatus('ready', 'Ready');
       loadModelBtn.disabled = true;
       loadModelBtn.textContent = 'Model Loaded';
-      updateSummarizeButton();
+      updateParseButton();
       setTimeout(() => progressContainer.classList.add('hidden'), 1500);
       break;
     case 'ERROR':
@@ -100,35 +220,6 @@ loaderWorker.addEventListener('message', (event) => {
       progressText.textContent = error;
       loadModelBtn.disabled = false;
       showError(`Model loading failed: ${error}`);
-      break;
-  }
-});
-
-summarizerWorker.addEventListener('message', (event) => {
-  const { type, summary, error, message } = event.data;
-
-  switch (type) {
-    case 'STATUS':
-      generationStatus.classList.remove('hidden');
-      generationStatus.querySelector('span').textContent = message;
-      break;
-    case 'GENERATION_START':
-      isGenerating = true;
-      generationStatus.classList.remove('hidden');
-      generationStatus.querySelector('span').textContent = 'Generating summary…';
-      updateSummarizeButton();
-      break;
-    case 'GENERATION_COMPLETE':
-      isGenerating = false;
-      generationStatus.classList.add('hidden');
-      showSummary(summary);
-      updateSummarizeButton();
-      break;
-    case 'ERROR':
-      isGenerating = false;
-      generationStatus.classList.add('hidden');
-      showError(error);
-      updateSummarizeButton();
       break;
   }
 });
@@ -142,46 +233,67 @@ loadModelBtn.addEventListener('click', () => {
   loaderWorker.postMessage({ type: 'LOAD' });
 });
 
-summarizeBtn.addEventListener('click', () => {
-  const text = inputText.value.trim();
-  if (!text || !modelLoaded || isGenerating) {
-    return;
+browseBtn.addEventListener('click', (event) => {
+  event.stopPropagation();
+  fileInput.click();
+});
+
+dropZone.addEventListener('click', () => fileInput.click());
+
+dropZone.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    fileInput.click();
   }
-
-  outputArea.innerHTML = '';
-  copyBtn.classList.add('hidden');
-
-  summarizerWorker.postMessage({
-    type: 'SUMMARIZE',
-    text,
-    options: {
-      maxLength: Number(maxLengthInput.value) || 130,
-      minLength: Number(minLengthInput.value) || 30,
-    },
-  });
 });
 
-inputText.addEventListener('input', () => {
-  updateCharCount();
-  updateSummarizeButton();
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files?.[0];
+  if (file) {
+    setSelectedFile(file);
+  }
 });
+
+clearFileBtn.addEventListener('click', () => {
+  fileInput.value = '';
+  setSelectedFile(null);
+});
+
+parseBtn.addEventListener('click', parseDocument);
 
 copyBtn.addEventListener('click', async () => {
-  const summaryEl = outputArea.querySelector('.summary-text');
-  if (!summaryEl) {
-    return;
-  }
+  if (!markdownResult) return;
 
   try {
-    await navigator.clipboard.writeText(summaryEl.textContent);
+    await navigator.clipboard.writeText(markdownResult);
     copyBtn.title = 'Copied!';
     setTimeout(() => {
-      copyBtn.title = 'Copy summary';
+      copyBtn.title = 'Copy markdown';
     }, 2000);
   } catch {
     showError('Could not copy to clipboard.');
   }
 });
 
-updateCharCount();
-updateSummarizeButton();
+downloadBtn.addEventListener('click', downloadMarkdown);
+
+dropZone.addEventListener('dragover', (event) => {
+  event.preventDefault();
+  dropZone.classList.add('drop-zone-active');
+});
+
+dropZone.addEventListener('dragleave', () => {
+  dropZone.classList.remove('drop-zone-active');
+});
+
+dropZone.addEventListener('drop', (event) => {
+  event.preventDefault();
+  dropZone.classList.remove('drop-zone-active');
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    setSelectedFile(file);
+  }
+});
+
+setModelStatus('idle', 'Not loaded');
+updateParseButton();

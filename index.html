@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Client-side text summarizer powered by Hugging Face Transformers.js"
+      content="Parse document images and PDFs to markdown in your browser using Transformers.js"
     />
-    <title>Text Summarizer</title>
+    <title>Document Parser</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -24,7 +24,7 @@
             <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
               <rect width="32" height="32" rx="8" fill="url(#grad)" />
               <path
-                d="M8 12h16M8 16h12M8 20h14"
+                d="M8 10h16M8 15h12M8 20h14M8 25h10"
                 stroke="white"
                 stroke-width="2"
                 stroke-linecap="round"
@@ -36,13 +36,17 @@
                 </linearGradient>
               </defs>
             </svg>
-            <h1>Text Summarizer</h1>
+            <h1>Document Parser</h1>
           </div>
           <p class="subtitle">
-            Summarize text entirely in your browser using
-            <a href="https://huggingface.co/Xenova/distilbart-cnn-6-6" target="_blank" rel="noopener"
-              >DistilBART-CNN</a
+            Extract text from images and PDFs as markdown using
+            <a
+              href="https://huggingface.co/onnx-community/granite-docling-258M-ONNX"
+              target="_blank"
+              rel="noopener"
+              >Granite Docling</a
             >
+            via Transformers.js
           </p>
         </div>
       </header>
@@ -65,58 +69,95 @@
             Load Model
           </button>
           <p class="hint">
-            Model runs in a background worker. Your text never leaves this device.
+            Loads the OCR model from local files bundled in this app (no web download). Runs in Web
+            Workers — your documents never leave this device. WebGPU is recommended for faster OCR.
           </p>
         </section>
 
         <section class="panel input-panel">
           <div class="panel-header">
-            <h2>Input Text</h2>
-            <span id="char-count" class="char-count">0 characters</span>
+            <h2>Upload</h2>
+            <span id="file-info" class="char-count">No file selected</span>
           </div>
 
-          <textarea
-            id="input-text"
-            class="textarea"
-            placeholder="Paste or type the text you want to summarize…"
-            rows="10"
-            spellcheck="true"
-          ></textarea>
-
-          <div class="options">
-            <label class="option">
-              <span>Max length</span>
-              <input id="max-length" type="number" min="20" max="300" value="130" />
-            </label>
-            <label class="option">
-              <span>Min length</span>
-              <input id="min-length" type="number" min="10" max="100" value="30" />
-            </label>
+          <div
+            id="drop-zone"
+            class="drop-zone"
+            tabindex="0"
+            role="button"
+            aria-label="Upload document"
+          >
+            <input
+              id="file-input"
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.tif,.bmp,.gif,image/*,application/pdf"
+              hidden
+            />
+            <svg
+              width="40"
+              height="40"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 16V4m0 0L8 8m4-4l4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <p class="drop-zone-title">Drop your document here</p>
+            <p class="drop-zone-hint">PDF, PNG, JPG, WEBP, TIFF · up to 50 MB</p>
+            <button id="browse-btn" class="btn btn-secondary" type="button">Browse files</button>
           </div>
 
-          <button id="summarize-btn" class="btn btn-primary" type="button" disabled>
-            Summarize
+          <div id="file-preview" class="file-preview hidden">
+            <div class="file-preview-info">
+              <span id="file-name" class="file-name"></span>
+              <button id="clear-file-btn" class="btn-text" type="button">Remove</button>
+            </div>
+          </div>
+
+          <button id="parse-btn" class="btn btn-primary" type="button" disabled>
+            Parse to Markdown
           </button>
         </section>
 
         <section class="panel output-panel">
           <div class="panel-header">
-            <h2>Summary</h2>
-            <button id="copy-btn" class="btn-icon hidden" type="button" title="Copy summary">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-            </button>
+            <h2>Markdown Output</h2>
+            <div class="output-actions hidden" id="output-actions">
+              <button id="copy-btn" class="btn-icon" type="button" title="Copy markdown">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+              <button id="download-btn" class="btn btn-secondary btn-sm" type="button">
+                Download .md
+              </button>
+            </div>
           </div>
 
           <div id="output-area" class="output-area">
-            <p class="placeholder">Your summary will appear here after you load the model and click Summarize.</p>
+            <p class="placeholder">
+              Parsed markdown will appear here after you load the model, upload a document, and click
+              Parse.
+            </p>
           </div>
 
-          <div id="generation-status" class="generation-status hidden">
+          <div id="processing-status" class="generation-status hidden">
             <div class="spinner"></div>
-            <span>Generating summary…</span>
+            <span>Running OCR… this may take a minute for multi-page PDFs.</span>
           </div>
         </section>
       </main>

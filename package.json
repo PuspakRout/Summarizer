@@ -1,15 +1,18 @@
 {
-  "name": "summarizer",
-  "version": "1.0.0",
+  "name": "document-parser",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "download-model": "node scripts/download-model.mjs",
+    "prebuild": "node scripts/download-model.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.4.0"
+    "@huggingface/transformers": "^3.4.0",
+    "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
     "vite": "^6.0.0"
